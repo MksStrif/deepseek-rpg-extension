@@ -1,0 +1,63 @@
+﻿body {
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+    padding: 10px;
+    background-color: #1e1e1e;
+    color: #ddd;
+    margin: 0;
+    transition: background-color 0.2s;
+}
+body.eraser-mode { background-color: #3a1c1c; }
+.top-bar { display: flex; justify-content: flex-end; margin-bottom: 5px; }
+.tool-btn { background: #444; color: white; border: 1px solid #666; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
+.tool-btn.active { background: #e74c3c; border-color: #c0392b; font-weight: bold; }
+
+#time-widget { background: #2d2d2d; padding: 8px; border-radius: 4px; text-align: center; margin-bottom: 10px; border-left: 4px solid #4CAF50; }
+#time-widget span { font-size: 12px; color: #aaa; display: block; margin-top: 4px;}
+
+.counter-row { background: #2d2d2d; padding: 6px 8px; border-radius: 4px; margin-bottom: 6px; }
+.counter-header { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 13px; }
+.counter-bar { height: 8px; background: #444; border-radius: 4px; overflow: hidden; }
+.counter-fill { height: 100%; background: #2196F3; transition: width 0.3s; }
+.counter-actions { display: flex; gap: 5px; margin-top: 5px; }
+.mini-btn { background: #444; color: white; border: none; border-radius: 3px; cursor: pointer; padding: 2px 6px; font-size: 12px; }
+.mini-btn:hover { background: #555; }
+
+/* v4.0: выделенный счетчик-цель (клик вставляет [Имя] в поле ввода) */
+.counter-row.selected { outline: 2px solid #2196F3; background: #264a66; }
+
+/* v4.0: группа счетчиков — компактные полоски в один ряд */
+.counter-group { display: flex; gap: 4px; margin-bottom: 6px; }
+.counter-group .counter-row { flex: 1; min-width: 0; margin-bottom: 0; padding: 4px 5px; }
+.counter-group .counter-header { font-size: 11px; margin-bottom: 2px; gap: 3px; }
+.counter-group .counter-header span { font-size: 10px; white-space: nowrap; }
+.counter-group .counter-bar { height: 5px; }
+.counter-group .mini-btn { padding: 1px 4px; font-size: 10px; }
+.counter-group .counter-actions { gap: 3px; margin-top: 3px; }
+
+/* v4.0: чипы статусов */
+#status-bar { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.status-chip { background: #3b2a55; border: 1px solid #7e57c2; color: #d1c4e9; border-radius: 10px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+.status-chip:hover { background: #4d3568; }
+body.eraser-mode .status-chip:hover { background: #e74c3c; border-color: #c0392b; color: white; cursor: crosshair; }
+
+.tabs { display: flex; gap: 2px; margin-bottom: 10px; flex-wrap: wrap; }
+.tab-btn { padding: 6px; background: #333; color: #aaa; border: none; cursor: pointer; border-radius: 4px 4px 0 0; font-size: 12px; }
+.tab-btn.active { background: #4CAF50; color: white; font-weight: bold; }
+.tab-content { display: none; }
+.tab-content.active { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; min-height: 20px; }
+
+.entity-btn { background: #333; border: 1px solid #555; border-radius: 12px; padding: 4px 8px; color: #eee; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 4px; }
+.entity-btn:hover { background: #444; }
+.entity-btn.selected { background: #2196F3; border-color: #2196F3; color: white; }
+.fav-btn { cursor: pointer; color: #666; font-size: 14px; transition: color 0.2s; }
+.fav-btn.active { color: #FFD700; }
+
+body.eraser-mode .entity-btn:hover, body.eraser-mode .counter-row:hover { background: #e74c3c; border-color: #c0392b; cursor: crosshair; color: white; }
+
+#action-preview { margin: 10px 0; padding: 8px; background: #3a3a3a; border-radius: 4px; font-size: 12px; color: #fff; border-left: 4px solid #FFC107;}
+#send-btn, .sys-btn { width: 100%; padding: 8px; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; margin-bottom: 5px; }
+#send-btn { background: #4CAF50; color: white; }
+#send-btn:disabled { background: #555; color: #888; cursor: not-allowed; }
+.sys-btn { background: #555; color: white; }
+.sys-btn:hover { background: #666; }

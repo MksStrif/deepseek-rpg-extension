@@ -1,0 +1,31 @@
+﻿{
+  "manifest_version": 3,
+  "name": "DeepSeek RPG Helper",
+  "version": "4.1",
+  "description": "RPG движок для DeepSeek",
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://chat.deepseek.com/*"
+  ],
+  "background": {
+    "service_worker": "scripts/background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/panel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": ["scripts/content.js"]
+    }
+  ],
+  "action": {
+    "default_title": "Открыть RPG панель"
+  }
+}

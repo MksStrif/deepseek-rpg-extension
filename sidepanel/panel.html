@@ -1,0 +1,49 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>RPG Панель</title>
+    <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+    <div class="top-bar">
+        <button id="reset-btn" class="tool-btn" style="background: #c0392b;">🗑️ Сброс</button>
+        <button id="eraser-btn" class="tool-btn">🧽 Ластик</button>
+        <button id="debug-btn" class="tool-btn" style="background: #2980b9;">🐞 Логи</button>
+        <button id="debug-send-btn" class="tool-btn" style="background: #27ae60;" title="Вставить отладочные логи в поле ввода — отправишь сам (Enter)">📤 В чат</button>
+    </div>
+
+    <!-- База отладки: журнал событий панели + диагностика контент-скрипта -->
+    <pre id="debug-area" hidden style="background:#111; color:#9f9; font-family:monospace; font-size:11px; line-height:1.5; padding:8px; border-radius:4px; margin:8px 0; max-height:260px; overflow:auto; white-space:pre-wrap;"></pre>
+
+    <div id="time-widget">
+        <strong>🕒 <span id="game-time">--:--</span></strong>
+        <span id="game-date">--.--.---- (---)</span>
+    </div>
+
+    <!-- v4.0: чипы статусов ([status: Цель, Эффект, Значение]) -->
+    <div id="status-bar" style="display: none;"></div>
+
+    <div id="dynamic-counters"></div>
+
+    <div id="tabs-header" class="tabs"></div>
+    <div id="tabs-content"></div>
+
+    <hr>
+    
+    <div id="log-preview" style="background: #2d2d2d; padding: 8px; border-radius: 4px; margin-bottom: 10px; border-left: 4px solid #555;"></div>
+
+    <div id="action-preview">
+        <strong>Действие:</strong> <span id="preview-text">Выберите предмет</span>
+    </div>
+    <button id="send-btn" disabled title="Приклеить накопленные логи [SYS]...[/SYS] к тексту в поле ввода">📤 Логи в чат</button>
+
+    <!-- Кнопка "Промпт" переехала на страницу чата (HUD над полем ввода) -->
+
+    <!-- Строгий порядок подключения! -->
+    <script src="storage.js"></script>
+    <script src="engine.js"></script>
+    <script src="ui.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
