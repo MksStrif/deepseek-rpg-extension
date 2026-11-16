@@ -1,8 +1,8 @@
 ﻿{
   "manifest_version": 3,
   "name": "DeepSeek RPG Helper",
-  "version": "4.1",
-  "description": "RPG движок для DeepSeek",
+  "version": "4.2",
+  "description": "RPG движок для DeepSeek и Алисы (Яндекс)",
   "permissions": [
     "sidePanel",
     "activeTab",
@@ -11,7 +11,8 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://chat.deepseek.com/*"
+    "https://chat.deepseek.com/*",
+    "https://alice.yandex.ru/*"
   ],
   "background": {
     "service_worker": "scripts/background.js"
@@ -21,7 +22,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://chat.deepseek.com/*"],
+      "matches": ["https://chat.deepseek.com/*", "https://alice.yandex.ru/*"],
       "js": ["scripts/content.js"]
     }
   ],

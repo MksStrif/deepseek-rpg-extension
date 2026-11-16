@@ -1,5 +1,5 @@
-﻿// content.js — v32
-// Перехват чата DeepSeek: парсинг [SYS]-блоков, скрытие системных данных,
+﻿// content.js — v34
+// Перехват чата: парсинг [SYS]-блоков, скрытие системных данных,
 // приклейка логов при отправке (Enter и клик, textarea и contenteditable),
 // HUD над полем ввода (логи, промпт, кубики), броски по запросу ИИ,
 // защита от эхо-цикла и размышлений модели, детект новой игры в чате,
@@ -15,8 +15,12 @@
 // v33: календари мира ([cal: Скайрим] + умная конвертация даты и вращение
 // дней недели/месяцев в [td:]) и таблицы разбивок счетчиков
 // ([c: Опыт, 450, Разбивка: Уровень:100+50] — уровни требуют всё больше опыта).
+// v34: АДАПТЕР САЙТОВ — работает и на DeepSeek (chat.deepseek.com),
+// и на Алисе (alice.yandex.ru). Весь конвейер site-agnostic, от сайта
+// зависят только контейнер ответа ИИ (.ds-markdown / .FuturisMarkdown)
+// и regex ID чата (ключ профиля состояния).
 
-console.log("[DeepSeek RPG] Content Script загружен (v33 - календари мира, таблицы разбивок счетчиков; без автоотправки: всё вставляется в поле, отправляет игрок).");
+console.log("[DeepSeek RPG] Content Script загружен (v34 - DeepSeek + Алиса; без автоотправки: всё вставляется в поле, отправляет игрок).");
 
 let debugLogs = [];
 function log(msg) {
@@ -39,7 +43,43 @@ style.textContent = `
 document.head.appendChild(style);
 
 // --- Определение ID чата (ключ профиля состояния) ---
-const CHAT_ID_RE = /chat\/(?:a\/chat\/)?s\/([a-zA-Z0-9-]+)/;
+// ============================================================
+// v4.2/v34: АДАПТЕР САЙТОВ. Работает на DeepSeek (chat.deepseek.com)
+// и Алисе (alice.yandex.ru). Весь конвейер site-agnostic — от сайта
+// зависят только 3 вещи:
+//   aiBlock      — контейнер markdown-ответа ИИ:
+//                  DeepSeek ".ds-markdown", Алиса ".FuturisMarkdown"
+//                  (проверено в живом DOM: .Message > .MessageBubble >
+//                  .AliceTextBubble > .MarkdownText > .FuturisMarkdown);
+//   aiBlockClass — то же имя без точки (для classList.contains);
+//   chatIdRe     — как из URL достать ID чата. Алиса: /chat/<uuid>/.
+// Поле ввода (у Алисы — обычный textarea AliceInput-Textarea), перехват
+// отправки, спойлеры, отпечатки эха, классификация ходов — универсальны.
+// На хосте не из списка расширение полностью инертно (ничего не находит).
+// ============================================================
+const SITES = {
+    deepseek: {
+        host: 'chat.deepseek.com',
+        aiBlock: '.ds-markdown',
+        aiBlockClass: 'ds-markdown',
+        chatIdRe: /chat\/(?:a\/chat\/)?s\/([a-zA-Z0-9-]+)/
+    },
+    alice: {
+        host: 'alice.yandex.ru',
+        aiBlock: '.FuturisMarkdown',
+        aiBlockClass: 'FuturisMarkdown',
+        chatIdRe: /chat\/([a-zA-Z0-9-]+)/
+    }
+};
+function detectSite() {
+    const h = location.hostname;
+    return Object.keys(SITES).find(k => h === SITES[k].host || h.endsWith('.' + SITES[k].host)) || null;
+}
+const SITE = detectSite();
+// На неизвестном хосте селекторы никогда не совпадут — расширение инертно.
+const CFG = SITE ? SITES[SITE] : { aiBlock: '.rpg-nosite', aiBlockClass: 'rpg-nosite', chatIdRe: /$^/ };
+const AI_BLOCK_SEL = CFG.aiBlock;
+const CHAT_ID_RE = CFG.chatIdRe;
 function getChatId() {
     const m = location.pathname.match(CHAT_ID_RE);
     return m ? m[1] : 'default';
@@ -180,7 +220,7 @@ function spoilerize(block, r, rawText) {
 }
 
 function processAndSend() {
-    const blocks = [...document.querySelectorAll('.ds-markdown')];
+    const blocks = [...document.querySelectorAll(AI_BLOCK_SEL)];
     blocks.forEach((block, idx) => {
       try {
         const text = block.innerText;
@@ -287,17 +327,17 @@ function processAndSend() {
       }
     });
     // v29: отдельно сканируем СООБЩЕНИЯ ПОЛЬЗОВАТЕЛЯ (старт игры, отправленный
-    // игроком по просьбе ИИ) — они не имеют класса .ds-markdown
+    // игроком по просьбе ИИ) — они не имеют класса AI_BLOCK_SEL (.ds-markdown / .FuturisMarkdown)
     processUserSys();
 }
 
 // ============================================================
 // СТАРТ ИГРЫ ОТ ИГРОКА (v29). ИИ-мастер просит игрока скопировать
 // стартовый текст ([SYS] [t: 1] ...) и отправить его как ОБЫЧНОЕ СООБЩЕНИЕ.
-// Такие блоки не имеют класса .ds-markdown и раньше полностью выпадали из
+// Такие блоки не имеют класса AI_BLOCK_SEL и раньше полностью выпадали из
 // конвейера: ход 1 не применялся, панель застревала на прошлой игре.
 // Правила безопасности:
-//   - блоки ИИ (.ds-markdown) исключены — обрабатываются отдельно;
+//   - блоки ИИ (AI_BLOCK_SEL) исключены — обрабатываются отдельно;
 //   - код (<pre>/<code>), наш HUD (#rpg-*), поле ввода и скрипты — исключены;
 //   - без [t:] блок НЕ отправляется в панель (приклеенные нами логи-эхо
 //     не содержат [t:] — защита от эхо-цикла работает и здесь);
@@ -325,7 +365,7 @@ function findUserSysPairs(rootEl) {
                 const tag = el.tagName;
                 if (tag === 'CODE' || tag === 'PRE' || tag === 'TEXTAREA' || tag === 'SCRIPT' || tag === 'STYLE') return NodeFilter.FILTER_REJECT;
                 if (el.id && String(el.id).indexOf('rpg-') === 0) return NodeFilter.FILTER_REJECT;
-                if (el.classList && (el.classList.contains('ds-markdown') || el.classList.contains('sys-spoiler'))) return NodeFilter.FILTER_REJECT;
+                if (el.classList && (el.classList.contains(CFG.aiBlockClass) || el.classList.contains('sys-spoiler'))) return NodeFilter.FILTER_REJECT;
                 if (el.getAttribute && el.getAttribute('contenteditable') === 'true') return NodeFilter.FILTER_REJECT;
                 el = el.parentElement;
             }
@@ -377,15 +417,15 @@ function processUserSys() {
             // v30, врата от «фантомных» пар (двойная НОВАЯ ИГРА / пинг-понг):
             // 1) якорь не должен лежать внутри верстки сообщения ИИ — цитаты
             //    нашего текста внутри ответа ИИ не проходят по предку,
-            //    у которого в поддереве есть .ds-markdown;
+            //    у которого в поддереве есть AI_BLOCK_SEL;
             // 2) паста игрока имеет смысл, только пока ИИ ЕЩЕ НЕ ОТВЕТИЛ
             //    (нет блока ИИ ниже). Иначе повторная встреча пасты сбрасывала
             //    lastProcessedTurn назад и вызывала двойные применения.
             let inAiRender = false;
             for (let el = anchor; el && el !== document.body; el = el.parentElement) {
-                if (el.querySelector('.ds-markdown')) { inAiRender = true; break; }
+                if (el.querySelector(AI_BLOCK_SEL)) { inAiRender = true; break; }
             }
-            const aiBelow = [...document.querySelectorAll('.ds-markdown')]
+            const aiBelow = [...document.querySelectorAll(AI_BLOCK_SEL)]
                 .some(b => anchor.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
             if (inAiRender || aiBelow) {
                 anchor.dataset.sysProcessed = 'true';
@@ -410,7 +450,7 @@ function processUserSys() {
 
             // live: блок — последний в чате (после него нет ни одного блока ИИ
             // и он — последняя пользовательская пара)
-            let isLive = ![...document.querySelectorAll('.ds-markdown')]
+            let isLive = ![...document.querySelectorAll(AI_BLOCK_SEL)]
                 .some(b => anchor.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
             if (isLive) {
                 const later = pairs.some(q =>
@@ -718,13 +758,14 @@ document.addEventListener('click', (e) => {
 // )
 // ============================================================
 function getDiagnostics() {
-    const blocks = [...document.querySelectorAll('.ds-markdown')];
+    const blocks = [...document.querySelectorAll(AI_BLOCK_SEL)];
     const input = getInput();
     return {
+        site: SITE,
         chatId: getChatId(),
         lastProcessedTurn: lastProcessedTurn,
         lastTurnBlockConnected: !!(lastTurnBlock && lastTurnBlock.isConnected),
-        spoilersInDom: document.querySelectorAll('.ds-markdown details.sys-spoiler').length,
+        spoilersInDom: document.querySelectorAll(`${AI_BLOCK_SEL} details.sys-spoiler`).length,
         pendingLogs: currentLogs.length,
         blocksTotal: blocks.length,
         sysProcessed: blocks.filter(b => b.dataset.sysProcessed === 'true').length,
