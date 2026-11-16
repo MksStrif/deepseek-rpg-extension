@@ -1,4 +1,6 @@
 # 🎲 DeepSeek RPG Extension
+<img width="800" height="610" alt="ezgif-1849a73af824d93d" src="https://github.com/user-attachments/assets/a2c70859-0604-4d4a-986e-0bb4f1e7b6e0" />
+*Демонстрация работы боковой панели в реальном времени*
 
 Расширение для браузера (Chrome / Яндекс.Браузер), которое превращает чат с ИИ в полноценную текстовую RPG.
 
