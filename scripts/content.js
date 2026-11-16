@@ -69,11 +69,28 @@ const SITES = {
         aiBlock: '.FuturisMarkdown',
         aiBlockClass: 'FuturisMarkdown',
         chatIdRe: /chat\/([a-zA-Z0-9-]+)/
+    },
+    portal: {
+        // Чат «Алиса AI» на ПОРТАЛЕ (yandex.ru / ya.ru): вкладка «Алиса AI»,
+        // поле «Опишите, что сделать». UI-кит тот же (Futuris*), что и на
+        // alice.yandex.ru — блок ответа ИИ ищем по подстроке класса,
+        // чтобы пережить возможные отличия в точном имени.
+        host: 'yandex.ru',
+        aliasHosts: ['ya.ru'],
+        aiBlock: '[class*="FuturisMarkdown"]',
+        aiBlockClass: 'FuturisMarkdown',
+        // ID чата может лежать и в пути (/chat/<id>), и в query-параметре
+        // (?chat= / ?tid= / ?cid= / ?session=) — берем первую непустую группу
+        chatIdRe: /\/chat\/([a-zA-Z0-9-]+)|[?&](?:chat|tid|cid|session)=([a-zA-Z0-9-]+)/
     }
 };
 function detectSite() {
     const h = location.hostname;
-    return Object.keys(SITES).find(k => h === SITES[k].host || h.endsWith('.' + SITES[k].host)) || null;
+    return Object.keys(SITES).find(k => {
+        const s = SITES[k];
+        return h === s.host || (s.aliasHosts || []).includes(h) ||
+               h.endsWith('.' + s.host) || (s.aliasHosts || []).some(a => h.endsWith('.' + a));
+    }) || null;
 }
 const SITE = detectSite();
 // На неизвестном хосте селекторы никогда не совпадут — расширение инертно.
@@ -81,8 +98,9 @@ const CFG = SITE ? SITES[SITE] : { aiBlock: '.rpg-nosite', aiBlockClass: 'rpg-no
 const AI_BLOCK_SEL = CFG.aiBlock;
 const CHAT_ID_RE = CFG.chatIdRe;
 function getChatId() {
-    const m = location.pathname.match(CHAT_ID_RE);
-    return m ? m[1] : 'default';
+    // href (а не pathname): у портального чата ID может быть в query-параметре
+    const m = location.href.match(CHAT_ID_RE);
+    return m ? (m[1] || m[2]) : 'default';
 }
 
 // ============================================================
@@ -491,8 +509,16 @@ const observer = new MutationObserver(() => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(processAndSend, 1000);
 });
-observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-processAndSend();
+// v34: observer вешаем ЛЕНИВО — только когда на странице появилось поле
+// ввода чата. Скрипт инжектится на весь портал Яндекса (поиск, сервисы),
+// и гонять MutationObserver по subtree каждой страницы — лишний CPU.
+let observerAttached = false;
+function ensureObserver() {
+    if (observerAttached || !getInput()) return;
+    observerAttached = true;
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    processAndSend();
+}
 
 // ============================================================
 // HUD НА СТРАНИЦЕ: очередь логов над полем ввода + кнопки
@@ -709,8 +735,9 @@ function ensureHud() {
         log('HUD установлен над полем ввода.');
     }
 }
-setInterval(ensureHud, 1500);
+setInterval(() => { ensureHud(); ensureObserver(); }, 1500);
 ensureHud();
+ensureObserver();
 
 // ============================================================
 // ПЕРЕХВАТ ОТПРАВКИ (Баг 1)
