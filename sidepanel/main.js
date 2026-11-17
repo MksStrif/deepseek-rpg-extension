@@ -147,13 +147,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             const payload = JSON.stringify({ type: 'twb-google-cookies', cookies });
+            // Канал 1 (основной): файл в Загрузки — буфер между программами
+            // оказался ненадежным, файл читается прототипом детерминированно
+            try {
+                const blob = new Blob([payload], { type: 'application/json' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'twb-cookies.json';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+            } catch (e) { /* файл-канал не критичен, есть буфер */ }
             navigator.clipboard.writeText(payload).then(() => {
-                journal(`🍪 Скопировано ${cookies.length} кук Google — в прототипе жми 📥 в тулбаре.`);
+                journal(`🍪 Скопировано ${cookies.length} кук: файл twb-cookies.json в Загрузках + буфер. В прототипе жми 📥.`);
             }).catch(() => {
-                // Буфер недоступен — показываем JSON в отладке для ручного копирования
-                const area = document.getElementById('debug-area');
-                if (area) { area.hidden = false; area.textContent = payload; }
-                journal(`🍪 Буфер отказал — JSON (${cookies.length} кук) открыт в отладке: кликни в него, Ctrl+A, Ctrl+C.`);
+                journal(`🍪 Файл twb-cookies.json скачан в Загрузки (${cookies.length} кук) — в прототипе жми 📥, он возьмет файл.`);
             });
         });
     };
