@@ -221,7 +221,17 @@ function gameTimeMinutes(t) {
 function minutesToGameTime(min) {
     const d = new Date(min * 60000);
     const pad = n => String(n).padStart(2, '0');
-    return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}, ${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`;
+    const hm = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+    // v4.3: при активном календаре мира дедлайн показывается В ФОРМАТЕ МИРА
+    // ("23:15, Урожая 21, 2026"), а не в реальной дате эпохи
+    const t = gameState.time || {};
+    const ds = String(t.date || '');
+    if (t.calendar && ds && !/^\s*\d{1,2}\.\d{1,2}\.\d{2,4}\s*$/.test(ds)) {
+        const dayAdd = Math.round((min - gameTimeMinutes(t)) / 1440);
+        const adv = dayAdd !== 0 ? advanceFantasyDate(ds, dayAdd) : ds;
+        if (adv) return `${hm}, ${adv}`;
+    }
+    return `${hm}, ${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`;
 }
 
 // Цель таймера → абсолютные минуты: "+2d"/"+5h"/"+1h30m"/"25.11.2026 14:00"/"14:00"
@@ -310,23 +320,48 @@ function runItemRules(item, propKey, reportToAI) {
 
 // Проверка отложенных событий: текущее игровое время >= время таймера
 let timerChecking = 0;
+// v4.3: таймер, команды которого исполняются прямо сейчас (для самоповтора)
+let executingTimer = null;
 function checkTimers(report) {
     if (!Array.isArray(gameState.timers) || gameState.timers.length === 0) return;
     if (timerChecking >= 5) return; // защита от каскада «таймер ставит таймер»
     timerChecking++;
     try {
+        // v4.3 РЕЕСТР СРАБОТОКК: защита от «воскрешения» таймера. Дубликат
+        // доставки хода (стриминг пересоздает DOM-блок) откатывает состояние
+        // к снапшоту, и уже сработавший таймер возвращается из него —
+        // стреляя ВТОРОЙ раз на ТОМ ЖЕ at. Ключ (ID + at): цикличный таймер
+        // после перепланирования получает НОВЫЙ at и стреляет свободно;
+        // воскрешенный попадает в старый ключ и пропускается. Реестр лежит
+        // в history (вне снапшота gameState) — переживает откат и F5.
+        if (!history.firedTimers || typeof history.firedTimers !== 'object') history.firedTimers = {};
+        const fk = history.firedTimers;
+        const fkKeys = Object.keys(fk);
+        if (fkKeys.length > 200) {
+            const cutoff = Date.now() - 30 * 60000;
+            fkKeys.forEach(k => { if (fk[k] < cutoff) delete fk[k]; });
+        }
         const now = gameTimeMinutes(gameState.time);
         const due = gameState.timers.filter(t => typeof t.at === 'number' && t.at <= now);
         for (const t of due) {
             // Удаляем ДО исполнения — повторный сдвиг времени не вызовет его снова
             gameState.timers = gameState.timers.filter(x => x !== t);
+            const fireKey = normName(t.id) + '@' + t.at;
+            if (fk[fireKey]) {
+                if (report) addLog(`# RPG: ⏰ [${t.id}] — повторное срабатывание на том же времени пропущено (уже исполнен)`);
+                continue;
+            }
+            fk[fireKey] = Date.now();
             if (report) addLog(`# RPG: ⏰ Событие [${t.id}] сработало!`);
             if (t.commands) {
                 // Команды таймера пишутся в ОДНОЙ строке через '///' — разделяем
                 // их переносами, иначе parseSysBlock съест только первый тег
                 // ("[msg: Привет!] /// [i: ...]" → msg схватил бы весь хвост)
                 const res = parseSysBlock(String(t.commands).replace(/\s*\/\/\/\s*/g, '\n'));
+                const prev = executingTimer;
+                executingTimer = t; // [timer: ТОТ_ЖЕ_ID, +time] без команд = самоповтор
                 applyOps(res.ops, report);
+                executingTimer = prev;
                 if (report && res.warnings.length) res.warnings.forEach(w => addLog(`# RPG: ⚠ в таймере [${t.id}]: ${w}`));
             }
         }
@@ -335,6 +370,20 @@ function checkTimers(report) {
     }
     saveState();
     if (typeof updateUI === 'function') updateUI();
+}
+
+// v4.3: при откате хода (перегенерация) каскадные таймеры, созданные ВНУТРИ
+// исполнения прошлого применения (таймер перепланировал сам себя, таймер
+// породил другой), в снапшот не попадают и после отката умирают молча —
+// цепочка «Куранты» жила ровно один цикл. Основные таймеры хода
+// пересоздадутся тегами заново применяемого блока; каскадные возвращаем.
+function mergeTimersAfterRollback(beforeTimers) {
+    if (!Array.isArray(gameState.timers)) gameState.timers = [];
+    (Array.isArray(beforeTimers) ? beforeTimers : []).forEach(t => {
+        if (t && t.id && !gameState.timers.some(x => normName(x.id) === normName(t.id))) {
+            gameState.timers.push(t);
+        }
+    });
 }
 
 // Сборка отчета о состоянии для [query: ...]
@@ -614,8 +663,12 @@ function parseSysBlock(text) {
             if (body.endsWith(']')) body = body.slice(0, -1); // закрывающая скобка самого [timer:]
             const c1 = body.indexOf(',');
             const c2 = c1 === -1 ? -1 : body.indexOf(',', c1 + 1);
-            if (c1 === -1 || c2 === -1) {
+            if (c1 === -1) {
                 warnings.push(`в [timer:] нужен формат "ID, время, команды" — "${line.slice(0, 50)}"`);
+            } else if (c2 === -1) {
+                // v4.3: форма БЕЗ команд — самоповтор. [timer: ТОТ_ЖЕ_ID, +15m]
+                // внутри команд таймера продолжит цикл с теми же командами
+                ops.push({ type: 'timer_add', id: body.slice(0, c1).trim(), time: body.slice(c1 + 1).trim(), commands: '' });
             } else {
                 ops.push({ type: 'timer_add', id: body.slice(0, c1).trim(), time: body.slice(c1 + 1, c2).trim(), commands: body.slice(c2 + 1).trim() });
             }
@@ -623,19 +676,32 @@ function parseSysBlock(text) {
         else if ((m = line.match(/^\[query:\s*([^\]]+)\]/))) {
             ops.push({ type: 'query', scope: m[1].trim() });
         }
-        else if ((m = line.match(/^\[msg:\s*([^\]]+)\]/))) {
-            ops.push({ type: 'msg', text: m[1].trim() });
+        else if (line.startsWith('[msg:')) {
+            // v4.3: значение до СБАЛАНСИРОВАННОЙ ']' — вложенные теги внутри
+            // сообщения ([msg: вестник [status: ...] прилетел]) не обрезаются
+            const end = balancedTagEnd(line, 5);
+            if (end === -1) warnings.push(`в [msg:] не закрыта ']' — "${line.slice(0, 40)}"`);
+            else ops.push({ type: 'msg', text: line.slice(5, end).trim() });
         }
         // v4.1 УМНЫЙ КАЛЕНДАРЬ: [cal: Скайрим] — пресет; [cal: Морндас, Тирдас, ...]
         // — свои дни недели; после | — свои месяцы; [cal: сброс] — реальный формат.
         else if ((m = line.match(/^\[cal:\s*([^\]]+)\]/))) {
             ops.push({ type: 'cal_set', spec: m[1].trim() });
         }
-        // v4.0: [status: Цель, Эффект, Значение] — устойчивая регулярка с ленивыми
-        // полями (запятые внутри Значения не ломают тег; комментарий после ] допустим).
+        // v4.0: [status: Цель, Эффект, Значение] — разбираем вручную:
+        // Цель и Эффект — до первых двух запятых, Значение — хвост до
+        // СБАЛАНСИРОВАННОЙ ']' (запятые и вложенные теги в значении не режем).
         // Снятие статуса: Значение 0 / "снят".
-        else if ((m = line.match(/^\[status:\s*(.+?),\s*(.+?),\s*(.+?)\]/))) {
-            ops.push({ type: 'status', target: m[1].trim(), effect: m[2].trim(), value: m[3].trim() });
+        else if (line.startsWith('[status:')) {
+            const end = balancedTagEnd(line, 8);
+            if (end === -1) {
+                warnings.push(`в [status:] не закрыта ']' — "${line.slice(0, 40)}"`);
+            } else {
+                const body = line.slice(8, end);
+                const c1 = body.indexOf(','), c2 = c1 === -1 ? -1 : body.indexOf(',', c1 + 1);
+                if (c1 === -1 || c2 === -1) warnings.push(`в [status:] нужно "Цель, Эффект, Значение" — "${line.slice(0, 50)}"`);
+                else ops.push({ type: 'status', target: body.slice(0, c1).trim(), effect: body.slice(c1 + 1, c2).trim(), value: body.slice(c2 + 1).trim() });
+            }
         }
         else if ((m = line.match(/^\[ROLL:\s*([^\],]+?)(?:\s*,\s*Result:\s*\d+)?\s*\]/i))) {
             // Бросок без результата — расширение кинет кубик само.
@@ -648,6 +714,19 @@ function parseSysBlock(text) {
         // Остальные строки — нарратив, игнорируем
     });
     return { ops, warnings };
+}
+
+// v4.3: сканер сбалансированных скобок: индекс закрывающей ']' для тега,
+// открытого перед startIdx. Вложенные '[' увеличивают глубину — тег внутри
+// значения ([msg: прилетает вестник [status: ...]]) больше не режет хвост.
+function balancedTagEnd(line, startIdx) {
+    let depth = 1;
+    for (let i = startIdx; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '[') depth++;
+        else if (ch === ']') { depth--; if (depth === 0) return i; }
+    }
+    return -1;
 }
 
 function applyOps(ops, reportToAI) {
@@ -744,7 +823,11 @@ function applyOps(ops, reportToAI) {
             if (reportToAI) addLog(msg);
             return;
         }
-        if (op.type === 'counter_set') gameState.counters[op.name] = { current: op.cur, max: op.max, color: (op.ctype === 'enemy' ? '#e53935' : '#2196F3'), ctype: op.ctype, group: op.group, breakdown: op.breakdown || null, months: op.months || null };
+        if (op.type === 'counter_set') {
+            gameState.counters[op.name] = { current: op.cur, max: op.max, color: (op.ctype === 'enemy' ? '#e53935' : '#2196F3'), ctype: op.ctype, group: op.group, breakdown: op.breakdown || null, months: op.months || null };
+            // v4.3: отчет о создании/перезаписи — раньше [c:] применялся молча
+            if (reportToAI) addLog(`# RPG: [c: ${op.name}] → установлено ${op.cur}${op.max ? '/' + op.max : ''}${op.ctype === 'enemy' ? ' (враг)' : ''}`);
+        }
         // Дельты ИИ идут через changeCounter: клампы по 0/max, каскады правил
         // и (при reportToAI) отчет агенту в logQueue — в формате # RPG:,
         // который парсер SYS игнорирует (нет риска двойного счета).
@@ -848,7 +931,15 @@ function applyOps(ops, reportToAI) {
             }
             // Повторный тег с тем же ID перезаписывает время/команды (правка таймера)
             gameState.timers = gameState.timers.filter(t => normName(t.id) !== normName(op.id));
-            gameState.timers.push({ id: op.id, at: at, commands: op.commands });
+            // v4.3 самоповтор: [timer: ТОТ_ЖЕ_ID, +15m] БЕЗ команд, исполненный
+            // ВНУТРИ самого таймера, продолжает цикл с теми же командами —
+            // иначе рекурсия «таймер содержит сам себя» была бы невозможна
+            let cmds = op.commands;
+            if (!cmds && executingTimer && normName(executingTimer.id) === normName(op.id)) {
+                cmds = executingTimer.commands;
+                if (reportToAI) addLog(`# RPG: [timer: ${op.id}] → самоповтор: цикл продолжен с теми же командами`);
+            }
+            gameState.timers.push({ id: op.id, at: at, commands: cmds });
             if (reportToAI) addLog(`# RPG: [timer: ${op.id}] установлен — сработает ${minutesToGameTime(at)}`);
             timeTouched = true; // таймер может быть уже просрочен — проверим сразу
         }

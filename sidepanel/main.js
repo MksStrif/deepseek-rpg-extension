@@ -203,8 +203,14 @@ document.addEventListener('DOMContentLoaded', () => {
             journal(`SYS: ход ${incomingTurn} — НОВЫЙ, применен (${ops.length} оп.)`);
         }
         else if (incomingTurn === history.currentTurn) {
-            // Перегенерация: откат к снимку и повторное применение
-            if (history.lastTurnSnapshot) gameState = JSON.parse(JSON.stringify(history.lastTurnSnapshot));
+            // Перегенерация: откат к снимку и повторное применение.
+            // v4.3: каскадные таймеры (созданные ВНУТРИ исполнения прошлого
+            // применения) в снапшот не попадают — возвращаем их после отката.
+            if (history.lastTurnSnapshot) {
+                const cascadeTimers = Array.isArray(gameState.timers) ? gameState.timers.slice() : [];
+                gameState = JSON.parse(JSON.stringify(history.lastTurnSnapshot));
+                mergeTimersAfterRollback(cascadeTimers);
+            }
             applyOps(ops, live);
             lastApplied = { turn: incomingTurn, sig: opsSig };
             saveState(); updateUI(); renderLogs();
