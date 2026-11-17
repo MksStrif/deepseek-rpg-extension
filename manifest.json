@@ -8,11 +8,14 @@
     "activeTab",
     "scripting",
     "storage",
-    "tabs"
+    "tabs",
+    "cookies"
   ],
   "host_permissions": [
     "https://chat.deepseek.com/*",
-    "https://alice.yandex.ru/*"
+    "https://alice.yandex.ru/*",
+    "*://*.google.com/*",
+    "*://*.youtube.com/*"
   ],
   "background": {
     "service_worker": "scripts/background.js"

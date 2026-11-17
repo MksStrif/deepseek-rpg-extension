@@ -116,6 +116,39 @@ document.addEventListener('DOMContentLoaded', () => {
         journal('Ластик: ' + (isEraserMode ? 'ВКЛ (кликай по лишнему)' : 'выкл'));
     };
 
+    // 🍪 Куки (v4.3): экспорт сессии Google в буфер обмена — перенос входа
+    // в TextWorld Browser (там кнопка 📥 импортирует их в сессию persist:chat).
+    // Google блокирует свой логин во встраиваемых браузерах, а готовые куки
+    // проверок не проходят — сессия просто «уже есть».
+    document.getElementById('cookie-export-btn').onclick = () => {
+        if (!chrome.cookies || !chrome.cookies.getAll) {
+            journal('🍪 Куки: API недоступен — расширение установлено без permission "cookies"?');
+            return;
+        }
+        const domains = ['google.com', 'youtube.com'];
+        const jobs = domains.map(d => new Promise(res => chrome.cookies.getAll({ domain: d }, cs => res(cs || []))));
+        Promise.all(jobs).then(lists => {
+            const seen = new Set();
+            const cookies = [];
+            lists.flat().forEach(c => {
+                const key = c.domain + '|' + c.path + '|' + c.name;
+                if (seen.has(key)) return;
+                seen.add(key);
+                cookies.push({
+                    name: c.name, value: c.value, domain: c.domain, path: c.path,
+                    expirationDate: c.expirationDate, secure: c.secure, httpOnly: c.httpOnly,
+                    sameSite: c.sameSite || 'unspecified'
+                });
+            });
+            const payload = JSON.stringify({ type: 'twb-google-cookies', cookies });
+            navigator.clipboard.writeText(payload).then(() => {
+                journal(`🍪 Скопировано ${cookies.length} кук Google — в прототипе жми 📥 в тулбаре.`);
+            }).catch(() => {
+                journal('🍪 Не смог записать в буфер — кликни кнопку ещё раз.');
+            });
+        });
+    };
+
     // «Вставить в чат» (v3.9): отправляет НАКОПЛЕННЫЕ ЛОГИ в поле ввода.
     // Действия вставляются сразу по клику на предмет (ui.js) — кнопка им
     // больше не нужна. sendQueuedLogs возвращает false, если логов нет.
