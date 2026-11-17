@@ -122,11 +122,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // проверок не проходят — сессия просто «уже есть».
     document.getElementById('cookie-export-btn').onclick = () => {
         if (!chrome.cookies || !chrome.cookies.getAll) {
-            journal('🍪 Куки: API недоступен — расширение установлено без permission "cookies"?');
+            journal('🍪 Куки: API недоступен. В прототипе эта кнопка не работает — она нужна в настоящем Chrome: установи расширение (chrome://extensions) и перезагрузи его ⟳.');
             return;
         }
         const domains = ['google.com', 'youtube.com'];
-        const jobs = domains.map(d => new Promise(res => chrome.cookies.getAll({ domain: d }, cs => res(cs || []))));
+        const jobs = domains.map(d => new Promise(res => {
+            try { chrome.cookies.getAll({ domain: d }, cs => res(cs || [])); } catch (e) { res([]); }
+        }));
         Promise.all(jobs).then(lists => {
             const seen = new Set();
             const cookies = [];
@@ -140,11 +142,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     sameSite: c.sameSite || 'unspecified'
                 });
             });
+            if (!cookies.length) {
+                journal('🍪 Найдено 0 кук. Если Google в этом Chrome залогинен — перезагрузи расширение: chrome://extensions → ⟳ (кнопке нужны новые permissions).');
+                return;
+            }
             const payload = JSON.stringify({ type: 'twb-google-cookies', cookies });
             navigator.clipboard.writeText(payload).then(() => {
                 journal(`🍪 Скопировано ${cookies.length} кук Google — в прототипе жми 📥 в тулбаре.`);
             }).catch(() => {
-                journal('🍪 Не смог записать в буфер — кликни кнопку ещё раз.');
+                // Буфер недоступен — показываем JSON в отладке для ручного копирования
+                const area = document.getElementById('debug-area');
+                if (area) { area.hidden = false; area.textContent = payload; }
+                journal(`🍪 Буфер отказал — JSON (${cookies.length} кук) открыт в отладке: кликни в него, Ctrl+A, Ctrl+C.`);
             });
         });
     };
